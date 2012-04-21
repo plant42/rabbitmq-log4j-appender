@@ -1,1 +1,4 @@
 target/
+clustering.ipr
+clustering.iws
+rabbitmq-log4j-appender.iml

@@ -10,8 +10,39 @@ import java.util.ArrayList;
 import java.util.List;
 
 
+/**
+ Copyright (c) 2011 Stuart Clark, http://www.plant42.com/
+
+ Permission is hereby granted, free of charge, to any person obtaining
+ a copy of this software and associated documentation files (the
+ "Software"), to deal in the Software without restriction, including
+ without limitation the rights to use, copy, modify, merge, publish,
+ distribute, sublicense, and/or sell copies of the Software, and to
+ permit persons to whom the Software is furnished to do so, subject to
+ the following conditions:
+
+ The above copyright notice and this permission notice shall be
+ included in all copies or substantial portions of the Software.
+
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+ LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+ A Log4j layout that formats a LoggingEvent to a JSONified string.
+ */
+
 public class JSONLayout extends Layout {
 
+
+    /**
+     * format a given LoggingEvent to a string, in this case JSONified string
+     * @param loggingEvent
+     * @return String representation of LoggingEvent
+     */
     @Override
     public String format(LoggingEvent loggingEvent) {
 
@@ -32,14 +63,20 @@ public class JSONLayout extends Layout {
     }
 
 
-    private void writeThrowable(JSONObject j, LoggingEvent event) throws JSONException {
+    /**
+     * Converts LoggingEvent Throwable to JSON object
+     * @param json
+     * @param event
+     * @throws JSONException
+     */
+    private void writeThrowable(JSONObject json, LoggingEvent event) throws JSONException {
         ThrowableInformation ti = event.getThrowableInformation();
         if (ti != null) {
             Throwable t = ti.getThrowable();
-            JSONObject json = new JSONObject();
-            
-            json.put("message", t.getMessage());
-            json.put("className", t.getClass().getCanonicalName());
+            JSONObject throwable = new JSONObject();
+
+            throwable.put("message", t.getMessage());
+            throwable.put("className", t.getClass().getCanonicalName());
             List<JSONObject> traceObjects = new ArrayList<JSONObject>();
             for(StackTraceElement ste : t.getStackTrace()) {
                 JSONObject element = new JSONObject();
@@ -51,24 +88,37 @@ public class JSONLayout extends Layout {
             }
             
             json.put("stackTrace", traceObjects);
-            j.put("throwable", json);
+            json.put("throwable", throwable);
         }
     }
 
 
-    private void writeBasic(JSONObject j, LoggingEvent event) throws JSONException {
-        j.put("threadName", event.getThreadName());
-        j.put("level", event.getLevel().toString());
-        j.put("timestamp", event.getTimeStamp());
-        j.put("message", event.getMessage());
-        j.put("logger", event.getLoggerName());
+    /**
+     * Converts basic LogginEvent properties to JSON object
+     * @param json
+     * @param event
+     * @throws JSONException
+     */
+    private void writeBasic(JSONObject json, LoggingEvent event) throws JSONException {
+        json.put("threadName", event.getThreadName());
+        json.put("level", event.getLevel().toString());
+        json.put("timestamp", event.getTimeStamp());
+        json.put("message", event.getMessage());
+        json.put("logger", event.getLoggerName());
     }
-    
+
+    /**
+     * Declares that this layout does not ignore throwable if available
+     * @return
+     */
     @Override
     public boolean ignoresThrowable() {
         return false;
     }
 
+    /**
+     * Just fulfilling the interface/abstract class requirements
+     */
     @Override
     public void activateOptions() {
     }
