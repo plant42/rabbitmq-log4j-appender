@@ -1,7 +1,7 @@
 rabbitmq-log4j-appender
 =======================
 
-A simple log4j appender to publish messages to a RabbitMQ queue.  
+A simple log4j appender to publish messages to a RabbitMQ queue.  The appender includes a layout which converts all log messages to JSON objects.
 
 The configuration is simple:
 
@@ -45,6 +45,5 @@ log4j.appender.rabbitmq.durable=false
 log4j.appender.rabbitmq.queue=log4j-queue
 log4j.appender.rabbitmq.layout=com.plant42.log4j.layouts.JSONLayout
 </code></pre>
-
 
 
