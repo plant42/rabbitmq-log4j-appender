@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE log4j:configuration SYSTEM "log4j.dtd">
+
+<log4j:configuration xmlns:log4j="http://jakarta.apache.org/log4j/">
+    <appender name="rabbitmq" class="com.plant42.log4j.appenders.RabbitMQAppender">
+        <param name="identifier" value="identifier"/>
+        <param name="host" value="rabbitmq.whateveryourhostis.com"/>
+        <param name="port" value="5672"/>
+        <param name="username" value="guest"/>
+        <param name="password" value="guest"/>
+        <param name="virtualHost" value="/"/>
+        <param name="exchange" value="log4j-exchange"/>
+        <param name="type" value="direct"/>
+        <param name="durable" value="false"/>
+        <param name="queue" value="log4j-queue"/>
+        <param name="routingKey" value=""/>
+        <layout class="com.plant42.log4j.layouts.JSONLayout" />
+    </appender>
+    <root>
+        <level value="ERROR"/>
+        <appender-ref ref="rabbitmq"/>
+    </root>
+</log4j:configuration>
