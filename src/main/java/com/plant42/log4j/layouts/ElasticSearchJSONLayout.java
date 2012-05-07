@@ -35,7 +35,11 @@ import java.util.List;
  A Log4j layout that formats a LoggingEvent to a JSONified string.
  */
 
-public class JSONLayout extends Layout {
+public class ElasticSearchJSONLayout extends JSONLayout {
+
+
+    private String index = "json-index";
+    private String type = "json";
 
 
     /**
@@ -45,67 +49,65 @@ public class JSONLayout extends Layout {
      */
     @Override
     public String format(LoggingEvent loggingEvent) {
+        
+        StringBuilder sb = new StringBuilder();
 
-        JSONObject root = new JSONObject();
+        JSONObject action = new JSONObject();
+        JSONObject source = new JSONObject();
 
         try {
+            JSONObject actionContent = new JSONObject();
+            actionContent.put("_index", this.index);
+            actionContent.put("_type", this.type);
+            action.put("index", actionContent);
+
+
+
+
+            JSONObject sourceContent = new JSONObject();
+
             //== write basic fields
-            writeBasic(root, loggingEvent);
+            writeBasic(sourceContent, loggingEvent);
 
             //== write throwable fields
-            writeThrowable(root, loggingEvent);
+            writeThrowable(sourceContent, loggingEvent);
+
+            source.put(this.type, sourceContent);
 
         } catch (JSONException e) {
             e.printStackTrace();
         }
 
-        return root.toString();
+        sb.append(action.toString());
+        sb.append("\n");
+        sb.append(source.toString());
+        sb.append("\n");
+
+        return sb.toString();
+
     }
 
 
-    /**
-     * Converts LoggingEvent Throwable to JSON object
-     * @param json
-     * @param event
-     * @throws JSONException
-     */
-    protected void writeThrowable(JSONObject json, LoggingEvent event) throws JSONException {
-        ThrowableInformation ti = event.getThrowableInformation();
-        if (ti != null) {
-            Throwable t = ti.getThrowable();
-            JSONObject throwable = new JSONObject();
+    public String getIndex() {
+        return index;
+    }
 
-            throwable.put("message", t.getMessage());
-            throwable.put("className", t.getClass().getCanonicalName());
-            List<JSONObject> traceObjects = new ArrayList<JSONObject>();
-            for(StackTraceElement ste : t.getStackTrace()) {
-                JSONObject element = new JSONObject();
-                element.put("class", ste.getClassName());
-                element.put("method", ste.getMethodName());
-                element.put("line", ste.getLineNumber());
-                element.put("file", ste.getFileName());
-                traceObjects.add(element);
-            }
-            
-            json.put("stackTrace", traceObjects);
-            json.put("throwable", throwable);
-        }
+    public void setIndex(String index) {
+        this.index = index;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
     }
 
 
-    /**
-     * Converts basic LogginEvent properties to JSON object
-     * @param json
-     * @param event
-     * @throws JSONException
-     */
-    protected void writeBasic(JSONObject json, LoggingEvent event) throws JSONException {
-        json.put("threadName", event.getThreadName());
-        json.put("level", event.getLevel().toString());
-        json.put("timestamp", event.getTimeStamp());
-        json.put("message", event.getMessage());
-        json.put("logger", event.getLoggerName());
-    }
+
+
+
 
     /**
      * Declares that this layout does not ignore throwable if available
@@ -121,6 +123,7 @@ public class JSONLayout extends Layout {
      */
     @Override
     public void activateOptions() {
+
     }
 
 }
