@@ -14,10 +14,13 @@
         <param name="durable" value="false"/>
         <param name="queue" value="log4j-queue"/>
         <param name="routingKey" value=""/>
-        <layout class="com.plant42.log4j.layouts.JSONLayout" />
+        <layout class="com.plant42.log4j.layouts.ElasticSearchJSONLayout">
+            <param name="index" value="logging" />
+            <param name="type" value="errors" />
+        </layout>
     </appender>
     <root>
-        <level value="ERROR"/>
+        <level value="INFO"/>
         <appender-ref ref="rabbitmq"/>
     </root>
 </log4j:configuration>
