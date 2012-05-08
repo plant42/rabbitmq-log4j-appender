@@ -28,6 +28,7 @@ The configuration is simple:
         &lt;level value="ERROR"/&gt;
         &lt;appender-ref ref="rabbitmq"/&gt;
     &lt;/root&gt;
+    &lt;/log4j:configuration
 </code></pre>
 
 
@@ -57,6 +58,7 @@ The configuration is simple:
            &lt;level value="ERROR"/&gt;
            &lt;appender-ref ref="rabbitmq"/&gt;
        &lt;/root&gt;
+       &lt;/log4j:configuration
    </code></pre>
 
 
