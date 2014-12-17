@@ -1,18 +1,17 @@
 package com.plant42.log4j.appenders;
 
-import com.rabbitmq.client.AMQP;
-import com.rabbitmq.client.Channel;
-import com.rabbitmq.client.Connection;
-import com.rabbitmq.client.ConnectionFactory;
+import com.rabbitmq.client.*;
 
 import org.apache.log4j.AppenderSkeleton;
 import org.apache.log4j.spi.ErrorCode;
 import org.apache.log4j.spi.LoggingEvent;
 
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.security.*;
+import java.util.concurrent.*;
 
 
 /**
@@ -40,7 +39,7 @@ import java.util.concurrent.Executors;
  A Log4j appender that publishes messages to a RabbitMQ exchange/queue.
 
  */
-public class RabbitMQAppender extends AppenderSkeleton {
+public class RabbitMQAppender extends AppenderSkeleton implements ShutdownListener {
     
     private ConnectionFactory factory = new ConnectionFactory();
     private Connection connection = null;
@@ -48,6 +47,8 @@ public class RabbitMQAppender extends AppenderSkeleton {
     private String identifier = null;
     private String host = "localhost";
     private int port = 5762;
+    private boolean ssl = false;
+    private boolean verifySsl = false;
     private String username = "guest";
     private String password = "guest";
     private String virtualHost = "/";
@@ -56,9 +57,12 @@ public class RabbitMQAppender extends AppenderSkeleton {
     private boolean durable = false;
     private String queue = "amqp-queue";
     private String routingKey = "";
+    private long droppedEvents = 0;
+    private long reconnections = 0;
+    private int queueLimit = 1024;
 
-    private ExecutorService threadPool = Executors.newSingleThreadExecutor();
-
+    // We will shutdown the threadPool if there is a problem activating the options.
+    private ExecutorService threadPool;
 
     /**
      * Submits LoggingEvent for publishing if it reaches severity threshold.
@@ -67,8 +71,29 @@ public class RabbitMQAppender extends AppenderSkeleton {
     @Override
     protected void append(LoggingEvent loggingEvent) {
         if ( isAsSevereAsThreshold(loggingEvent.getLevel())) {
-            threadPool.submit( new AppenderTask(loggingEvent) );
+            try {
+                threadPool.submit(new AppenderTask(loggingEvent));
+            } catch (RejectedExecutionException ree) {
+                droppedEvents++;
+                // This is expected if the server goes down, we have network problems, or we
+                // failed to create the connection in the first place.
+                errorHandler.error("Dropping logging events.", ree, ErrorCode.GENERIC_FAILURE);
+            }
         }
+    }
+
+    /**
+     * Build a string containing the details of the connection, this is useful in debugging.
+     * @return
+     */
+    protected String getConnectionDetails() {
+        return
+                "Host: "+ host+ ", "+
+                "Port: "+ port + ", "+
+                "Virtual Host:"+ virtualHost+ ", "+
+                "Username: "+ username+ ", "+
+                "Password: "+ ((password == null || password.isEmpty())?"":"******")+ ", "+
+                "SSL: "+ ssl+ ", ";
     }
 
     /**
@@ -79,46 +104,83 @@ public class RabbitMQAppender extends AppenderSkeleton {
     public void activateOptions() {
         super.activateOptions();
 
+        threadPool = new ThreadPoolExecutor(0, 1,
+                1000L, TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<Runnable>(queueLimit));
+
         //== creating connection
         try {
+            setFactoryConfiguration();
             this.createConnection();
         } catch (IOException ioe) {
-            errorHandler.error(ioe.getMessage(), ioe, ErrorCode.GENERIC_FAILURE);
+            errorHandler.error("Failed to connect to: " + getConnectionDetails(), ioe, ErrorCode.GENERIC_FAILURE);
+            threadPool.shutdown();
+        } catch (GeneralSecurityException gse) { // thrown when SSL problems happen.
+            errorHandler.error(gse.getMessage(), gse, ErrorCode.GENERIC_FAILURE);
+            threadPool.shutdown();
         }
 
         //== creating channel
         try {
             this.createChannel();
         } catch (IOException ioe) {
-            errorHandler.error(ioe.getMessage(), ioe, ErrorCode.GENERIC_FAILURE);
+            errorHandler.error("Failed to create channel", ioe, ErrorCode.GENERIC_FAILURE);
+            threadPool.shutdown();
         }
-        
+
         //== create exchange
         try {
             this.createExchange();
         } catch (Exception ioe) {
-            errorHandler.error(ioe.getMessage(), ioe, ErrorCode.GENERIC_FAILURE);
+            errorHandler.error("Failed to create exchange: "+ getExchange(), ioe, ErrorCode.GENERIC_FAILURE);
+            threadPool.shutdown();
         }
 
         //== create queue
         try {
             this.createQueue();
         } catch (Exception ioe) {
-            errorHandler.error(ioe.getMessage(), ioe, ErrorCode.GENERIC_FAILURE);
+            errorHandler.error("Failed to create queue: "+ getQueue(), ioe, ErrorCode.GENERIC_FAILURE);
+            threadPool.shutdown();
         }
     }
 
     /**
      * Sets the ConnectionFactory parameters
      */
-    private void setFactoryConfiguration() {
+    private void setFactoryConfiguration() throws KeyManagementException, NoSuchAlgorithmException, NoSuchProviderException, KeyStoreException {
         factory.setHost(this.host);
         factory.setPort(this.port);
+        if (ssl) {
+            if (verifySsl) {
+                factory.useSslProtocol("TLSv1", getTrustManager());
+            } else {
+                factory.useSslProtocol("TLSv1");
+            }
+        }
         factory.setVirtualHost(this.virtualHost);
         factory.setUsername(this.username);
         factory.setPassword(this.password);
     }
 
+    /**
+     * This finds a trust manager from the JVM.
+     * @return
+     * @throws NoSuchProviderException
+     * @throws NoSuchAlgorithmException
+     */
+    private TrustManager getTrustManager() throws NoSuchProviderException, NoSuchAlgorithmException, KeyStoreException {
+        TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance("PKIX", "SunJSSE");
+        trustManagerFactory.init((KeyStore)null);
+        TrustManager[] trustManagers = trustManagerFactory.getTrustManagers();
+        for (int i = 0; i < trustManagers.length; i++) {
+            if (trustManagers[i] instanceof X509TrustManager) {
+                return trustManagers[i];
+            }
+        }
+        // We don't want to ignore this.
+        throw new NoSuchProviderException("Unable to find a trust manager to use.");
+    }
     /**
      * Returns identifier property as set in appender configuration
      * @return
@@ -165,6 +227,38 @@ public class RabbitMQAppender extends AppenderSkeleton {
      */
     public void setPort(int port) {
         this.port = port;
+    }
+
+    /**
+     * Returns <code>true</code> if SSL is being used to connect.
+     * @return
+     */
+    public boolean isSsl() {
+        return ssl;
+    }
+
+    /**
+     * Configures SSL on the connection.
+     * @param ssl
+     */
+    public void setSsl(boolean ssl) {
+        this.ssl = ssl;
+    }
+
+    /**
+     * Returns <code>true</code> if the server certificate should be verified.
+     * @return
+     */
+    public boolean isVerifySsl() {
+        return verifySsl;
+    }
+
+    /**
+     * Sets if we should verify the server certificate.
+     * @param verifySsl
+     */
+    public void setVerifySsl(boolean verifySsl) {
+        this.verifySsl = verifySsl;
     }
 
     /**
@@ -292,6 +386,18 @@ public class RabbitMQAppender extends AppenderSkeleton {
     }
 
     /**
+     * Returns the number of events that can be queued up before we start dropping them.
+     * @return
+     */
+    public int getQueueLimit() {
+        return queueLimit;
+    }
+
+    public void setQueueLimit(int queueLimit) {
+        this.queueLimit = queueLimit;
+    }
+
+    /**
      * Declares the exchange on RabbitMQ server according to properties set
      * @throws IOException
      */
@@ -323,8 +429,9 @@ public class RabbitMQAppender extends AppenderSkeleton {
      * @throws IOException
      */
     private Channel createChannel() throws IOException {
-        if (this.channel == null || !this.channel.isOpen() && (this.connection != null && this.connection.isOpen()) ) {
+        if ((this.channel == null || !this.channel.isOpen()) && (this.connection != null && this.connection.isOpen()) ) {
             this.channel = this.connection.createChannel();
+            this.channel.addShutdownListener(this);
         }
         return this.channel;
     }
@@ -334,12 +441,12 @@ public class RabbitMQAppender extends AppenderSkeleton {
      * @return
      * @throws IOException
      */
-    private Connection createConnection() throws IOException {
-        setFactoryConfiguration();
+    private Connection createConnection() throws IOException, NoSuchAlgorithmException, KeyManagementException, NoSuchProviderException, KeyStoreException {
         if (this.connection == null || !this.connection.isOpen()) {
+            reconnections++;
             this.connection = factory.newConnection();
+            this.connection.addShutdownListener(this);
         }
-
         return this.connection;
     }
 
@@ -349,6 +456,13 @@ public class RabbitMQAppender extends AppenderSkeleton {
      */
     @Override
     public void close() {
+        threadPool.shutdown();
+        try {
+            threadPool.awaitTermination(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            errorHandler.error("Didn't manage to shutdown in time.", e, ErrorCode.CLOSE_FAILURE);
+        }
+
         if (channel != null && channel.isOpen()) {
             try {
                 channel.close();
@@ -376,15 +490,33 @@ public class RabbitMQAppender extends AppenderSkeleton {
         return true;
     }
 
+    @Override
+    public void shutdownCompleted(ShutdownSignalException cause) {
+        Object item = cause.getReference();
+        if (item instanceof Connection) {
+            connection = null;
+        }
+        if (item instanceof Channel) {
+            channel = null;
+        }
+    }
+
 
     /**
      * Simple Callable class that publishes messages to RabbitMQ server
      */
-    class AppenderTask implements Callable<LoggingEvent> {
-        LoggingEvent loggingEvent;
+    class AppenderTask implements Callable<Object> {
+
+        String payload;
+        String id;
+        String level;
 
         AppenderTask(LoggingEvent loggingEvent) {
-            this.loggingEvent = loggingEvent;
+            // We throw away the loggingEvent here so that things like the thread name
+            // are correct and any delays in logging don't affect the timestamp
+            payload = layout.format(loggingEvent);
+            id = String.format("%s:%s", identifier, System.currentTimeMillis());
+            level = loggingEvent.getLevel().toString();
         }
 
         /**
@@ -393,20 +525,29 @@ public class RabbitMQAppender extends AppenderSkeleton {
          * @throws Exception
          */
         @Override
-        public LoggingEvent call() throws Exception {
-            String payload = layout.format(loggingEvent);
-            String id = String.format("%s:%s", identifier, System.currentTimeMillis());
+        public Object call() throws Exception {
 
             
             AMQP.BasicProperties.Builder b = new AMQP.BasicProperties().builder();
             b.appId(identifier)
-                    .type(loggingEvent.getLevel().toString())
+                    .type(level)
                     .correlationId(id)
                     .contentType("text/json");
 
-            createChannel().basicPublish(exchange, routingKey, b.build(), payload.toString().getBytes());
-
-            return loggingEvent;
+            boolean success = false;
+            int backOff = 1; // Don't want to hammer remote server.
+            do {
+                try {
+                    createConnection();
+                    createChannel().basicPublish(exchange, routingKey, b.build(), payload.toString().getBytes());
+                    success = true;
+                } catch (IOException e) {
+                    Thread.sleep(backOff);
+                    backOff *= 2;
+                    backOff = Math.min(backOff, 1024); // Limit to 1 second
+                }
+            } while(!success); // If the queue gets stuck it's best to reset the logging framework
+            return null;
         }
     }
 }
