@@ -10,6 +10,8 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.security.*;
 import java.util.concurrent.*;
 
@@ -103,10 +105,18 @@ public class RabbitMQAppender extends AppenderSkeleton implements ShutdownListen
     @Override
     public void activateOptions() {
         super.activateOptions();
-
         threadPool = new ThreadPoolExecutor(0, 1,
                 1000L, TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<Runnable>(queueLimit));
+
+        // Use hostname if identifier isn't there.
+        if (identifier == null || identifier.isEmpty()) {
+            try {
+                identifier = InetAddress.getLocalHost().getHostName();
+            } catch (UnknownHostException e) {
+                // Ignore.
+            }
+        }
 
         //== creating connection
         try {
