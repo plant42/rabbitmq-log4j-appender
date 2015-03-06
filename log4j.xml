@@ -6,6 +6,8 @@
         <param name="identifier" value="identifier"/>
         <param name="host" value="rabbitmq.whateveryourhostis.com"/>
         <param name="port" value="5672"/>
+        <param name="ssl" value="false"/>
+        <param name="verifySsl" value="false"/>
         <param name="username" value="guest"/>
         <param name="password" value="guest"/>
         <param name="virtualHost" value="/"/>

@@ -77,6 +77,8 @@ log4j.appender.rabbitmq.queue=log4j-queue
 log4j.appender.rabbitmq.layout=com.plant42.log4j.layouts.JSONLayout
 </code></pre>
 
-
-
+I've added support for SSL.
+It also needs to not block when the queue is full or the connection to rabbitmq is lost.
+JSON.org java libs aren't very good, should switch out.
+com.rabbitmq.tools.json.JSONWriter - Looks to be an existing one in the client libs.
 
